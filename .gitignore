@@ -1,0 +1,7 @@
+.env
+.env.*
+/mdyomi
+/mdyomi.exe
+/dist/
+/coverage.out
+*.test
