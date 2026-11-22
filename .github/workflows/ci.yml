@@ -1,0 +1,91 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Check (Go ${{ matrix.go }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.checkout.outputs.commit }}
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.22.x', stable]
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ matrix.go }}
+      - run: make check
+      - name: Build and check release packages
+        if: matrix.go == 'stable'
+        run: |
+          version="snapshot-${GITHUB_SHA:0:12}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="$GITHUB_REF_NAME"; fi
+          bash scripts/package.sh "$version" dist
+      - name: Save distribution files
+        if: matrix.go == 'stable'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: distribution
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: distribution
+          path: dist
+      - name: Verify files and publish
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          BUILT_COMMIT: ${{ needs.check.outputs.commit }}
+        run: |
+          set -euo pipefail
+          sha256sum -c SHA256SUMS
+          tag_commit=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)
+          [[ "$tag_commit" == "$BUILT_COMMIT" ]] || { echo 'Tag moved since this run started'; exit 1; }
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
+            if [[ "$draft" == false ]]; then
+              echo "Release $TAG is already published"
+              exit 0
+            fi
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" ./*.tar.gz ./*.zip SHA256SUMS --clobber
+          gh release edit "$TAG" --draft=false

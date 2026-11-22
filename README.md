@@ -70,10 +70,18 @@ GNU Make と POSIX シェルがある環境では、次のコマンドで書式�
 make check
 ```
 
-## 5. 不具合報告と変更提案
+## 5. CI とリリース
+
+`main` へのプルリクエストと push で GitHub Actions が `make check` を実行します。対象は Go 1.22 系と最新安定版です。最新安定版では Linux・macOS・Windows の各 amd64／arm64 向けに配布物をビルドし、Linux amd64 版を展開して標準入出力も検証します。API キーの設定は不要です。[Actions の実行履歴](https://github.com/YKamataki/mdyomi/actions/workflows/ci.yml)
+
+各実行の `distribution` アーティファクトには、6種類のアーカイブと `SHA256SUMS` が入ります。Linux・macOS 向けは tar.gz、Windows 向けは zip です。各アーカイブに実行ファイル、README、ライセンスを同梱します。
+
+メンテナーが `v1.2.3` のような `vメジャー.マイナー.パッチ` 形式のタグを GitHub に push すると、そのタグでも同じ検証を実行します。すべて成功すると、配布物とチェックサムを GitHub Release に添付して公開します。[リリース一覧](https://github.com/YKamataki/mdyomi/releases)
+
+## 6. 不具合報告と変更提案
 
 変換結果を報告するときは、再現できる最小の入力、期待する出力、実際の出力、使用したモデルと入力形式を添えてください。原稿に個人情報が含まれる場合は、架空の例でも再現することを確認してから共有してください。マークアップの扱いを変更する場合は、保持すべき記号や空白も含めてテストに追加してください。
 
-## 6. ライセンス
+## 7. ライセンス
 
 mdyomi のソースコードと組み込みプロンプトは MIT ライセンスで配布します。Markdown パーサー goldmark の著作権表示とライセンス本文も同梱しています。[mdyomi のライセンス](LICENSE)・[goldmark のライセンス](LICENSES/goldmark.txt)
